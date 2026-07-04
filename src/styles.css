@@ -548,11 +548,6 @@ button:hover,
   gap: 8px;
 }
 
-.ticket a {
-  color: #0071e3;
-  font-weight: 800;
-}
-
 .ticket-actions {
   display: flex;
   align-items: center;
@@ -561,6 +556,7 @@ button:hover,
   flex-wrap: wrap;
 }
 
+.ticket-actions a,
 .buy-ticket-button {
   min-height: 38px;
   display: inline-flex;
@@ -643,7 +639,7 @@ button:hover,
   display: block;
   height: 100%;
   border-radius: inherit;
-  background: linear-gradient(90deg, #0071e3, #1d1d1f);
+  background: #1d1d1f;
 }
 
 @keyframes ticketFloat {
