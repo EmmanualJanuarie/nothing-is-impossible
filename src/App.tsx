@@ -24,6 +24,8 @@ type Release = {
   platform: string;
   link: string;
   cover: string;
+  description: string;
+  status: "upcoming" | "released";
 };
 
 type EventItem = {
@@ -34,6 +36,7 @@ type EventItem = {
   date: string;
   time: string;
   ticketPrice: string;
+  ticketCurrency: string;
   ticketLink: string;
   ticketTotal: number;
   ticketsLeft: number;
@@ -44,6 +47,16 @@ type Post = {
   title: string;
   message: string;
   date: string;
+};
+
+type MerchItem = {
+  id: string;
+  title: string;
+  description: string;
+  price: string;
+  currency: string;
+  stock: number;
+  image: string;
 };
 
 type Story = {
@@ -90,6 +103,7 @@ type SiteData = {
   releases: Release[];
   events: EventItem[];
   posts: Post[];
+  merch: MerchItem[];
   socials: Record<SocialPlatform, SocialStory>;
 };
 
@@ -105,6 +119,8 @@ const emptyRelease: Omit<Release, "id"> = {
   platform: "",
   link: "",
   cover: "",
+  description: "",
+  status: "upcoming",
 };
 
 const emptyEvent: Omit<EventItem, "id"> = {
@@ -114,6 +130,7 @@ const emptyEvent: Omit<EventItem, "id"> = {
   date: "",
   time: "",
   ticketPrice: "",
+  ticketCurrency: "R",
   ticketLink: "",
   ticketTotal: 0,
   ticketsLeft: 0,
@@ -125,7 +142,25 @@ const emptyPost: Omit<Post, "id"> = {
   date: new Date().toISOString().slice(0, 10),
 };
 
+const emptyMerch: Omit<MerchItem, "id"> = {
+  title: "",
+  description: "",
+  price: "",
+  currency: "R",
+  stock: 0,
+  image: "",
+};
+
 const socialPlatforms: SocialPlatform[] = ["tiktok", "instagram", "facebook"];
+
+const currencies = [
+  { label: "South African Rand (R)", value: "R" },
+  { label: "US Dollar ($)", value: "$" },
+  { label: "Euro (€)", value: "€" },
+  { label: "British Pound (£)", value: "£" },
+  { label: "Namibian Dollar (N$)", value: "N$" },
+  { label: "Botswana Pula (P)", value: "P" },
+];
 
 const backgroundThemes: Array<{ label: string; value: BackgroundTheme }> = [
   { label: "Default clean", value: "theme-default" },
@@ -164,14 +199,20 @@ const seedData: SiteData = {
       platform: "Spotify, Apple Music",
       link: "",
       cover: "",
+      description:
+        "A song about waking up with hope again, written from the quiet moments after the hardest parts of the journey.",
+      status: "upcoming",
     },
     {
       id: "release-2",
       title: "Still Standing",
-      date: "2026-09-14",
+      date: "2026-06-14",
       platform: "All platforms",
       link: "",
       cover: "",
+      description:
+        "An anthem for anyone rebuilding, healing, and choosing to stand tall after life tried to knock them down.",
+      status: "released",
     },
   ],
   events: [
@@ -182,7 +223,8 @@ const seedData: SiteData = {
       city: "Johannesburg",
       date: "2026-08-21",
       time: "19:30",
-      ticketPrice: "R180",
+      ticketPrice: "180",
+      ticketCurrency: "R",
       ticketLink: "",
       ticketTotal: 120,
       ticketsLeft: 34,
@@ -194,7 +236,8 @@ const seedData: SiteData = {
       city: "Pretoria",
       date: "2026-10-05",
       time: "18:00",
-      ticketPrice: "R250",
+      ticketPrice: "250",
+      ticketCurrency: "R",
       ticketLink: "",
       ticketTotal: 300,
       ticketsLeft: 188,
@@ -209,6 +252,7 @@ const seedData: SiteData = {
       date: "2026-07-04",
     },
   ],
+  merch: [],
   socials: {
     tiktok: {
       platform: "tiktok",
@@ -266,6 +310,31 @@ export function App() {
 
   const updateData = (next: SiteData) => setData(cleanExpiredEvents(next));
 
+  const renderAdmin = () => (
+    <AdminPage
+      data={data}
+      isAdmin={isAdmin}
+      onLogin={() => {
+        localStorage.setItem(ADMIN_KEY, "true");
+        setIsAdmin(true);
+      }}
+      onLogout={() => {
+        localStorage.removeItem(ADMIN_KEY);
+        setIsAdmin(false);
+        navigate("/");
+      }}
+      onNavigate={navigate}
+      onUpdate={updateData}
+    />
+  );
+
+  if (isAdmin && !route.startsWith(ADMIN_PATH)) {
+    if (window.location.pathname !== ADMIN_PATH) {
+      window.history.replaceState({}, "", ADMIN_PATH);
+    }
+    return renderAdmin();
+  }
+
   if (route.startsWith("/admin")) {
     if (window.location.pathname !== "/") {
       window.history.replaceState({}, "", "/");
@@ -274,22 +343,7 @@ export function App() {
   }
 
   if (route.startsWith(ADMIN_PATH)) {
-    return (
-      <AdminPage
-        data={data}
-        isAdmin={isAdmin}
-        onLogin={() => {
-          localStorage.setItem(ADMIN_KEY, "true");
-          setIsAdmin(true);
-        }}
-        onLogout={() => {
-          localStorage.removeItem(ADMIN_KEY);
-          setIsAdmin(false);
-        }}
-        onNavigate={navigate}
-        onUpdate={updateData}
-      />
-    );
+    return renderAdmin();
   }
 
   return <PublicSite data={data} onNavigate={navigate} onUpdate={updateData} />;
@@ -304,10 +358,25 @@ function PublicSite({
   onNavigate: (path: string) => void;
   onUpdate: (data: SiteData) => void;
 }) {
+  const isMidnightHold = useMidnightHold();
   const [creditsOpen, setCreditsOpen] = useState(false);
   const nextEvent = useMemo(
     () => [...data.events].sort((a, b) => a.date.localeCompare(b.date))[0],
     [data.events]
+  );
+  const featuredRelease = useMemo(
+    () =>
+      data.releases
+        .filter((release) => release.status === "upcoming")
+        .sort((a, b) => a.date.localeCompare(b.date))[0],
+    [data.releases]
+  );
+  const releasedSongs = useMemo(
+    () =>
+      data.releases
+        .filter((release) => release.status === "released")
+        .sort((a, b) => b.date.localeCompare(a.date)),
+    [data.releases]
   );
 
   useEffect(() => {
@@ -326,17 +395,22 @@ function PublicSite({
     return () => window.removeEventListener("scroll", closeOnScrollUp);
   }, [creditsOpen]);
 
+  if (isMidnightHold) {
+    return <MidnightHold data={data} onNavigate={onNavigate} />;
+  }
+
   return (
     <main className={`site-shell ${data.backgroundTheme}`}>
       <ThemeStrip theme={data.backgroundTheme} />
       <nav className="topbar glass">
         <button className="brand-button" onClick={() => onNavigate("/")}>
-          <span className="brand-mark">NiIM</span>
+          <span className="brand-mark">Martin</span>
           <span>{data.artistName}</span>
         </button>
         <div className="nav-links">
           <a href="#music">Music</a>
           <a href="#events">Events</a>
+          <a href="#merch">Merch</a>
           <a href="#socials">Socials</a>
           <a href="#story">Story</a>
           <button className="studio-button" aria-label="Open admin studio" onClick={() => onNavigate(ADMIN_PATH)}>
@@ -397,8 +471,14 @@ function PublicSite({
           <p className="eyebrow">New song releases</p>
           <h2>Listen to what is next</h2>
         </div>
+        {featuredRelease ? <FeaturedRelease release={featuredRelease} /> : <p className="muted">No upcoming song has been added yet.</p>}
+        <div className="section-heading compact-heading">
+          <p className="eyebrow">Recently released</p>
+          <h2>Available to listen</h2>
+        </div>
         <div className="release-grid">
-          {data.releases.map((release) => (
+          {releasedSongs.length === 0 && <p className="muted">No released songs have been added yet.</p>}
+          {releasedSongs.map((release) => (
             <article className="release-card" key={release.id}>
               <div className="cover">
                 {release.cover ? <img src={release.cover} alt={`${release.title} cover`} /> : <Music2 size={38} />}
@@ -408,10 +488,12 @@ function PublicSite({
                 <h3>{release.title}</h3>
                 <span>{release.platform}</span>
               </div>
-              {release.link && (
-                <a className="text-link" href={release.link} target="_blank" rel="noreferrer">
-                  Listen
+              {release.link ? (
+                <a className="release-listen-button" href={release.link} target="_blank" rel="noreferrer">
+                  Listen now
                 </a>
+              ) : (
+                <span className="release-listen-button disabled">Link soon</span>
               )}
             </article>
           ))}
@@ -439,12 +521,31 @@ function PublicSite({
               </div>
               <div className="ticket">
                 <TicketMeter event={event} />
-                <strong>{event.ticketPrice}</strong>
+                <strong>{formatMoney(event.ticketCurrency, event.ticketPrice)}</strong>
                 <TicketActions data={data} event={event} />
               </div>
             </article>
           ))}
         </div>
+      </section>
+
+      <section id="merch" className="section">
+        <div className="section-heading">
+          <p className="eyebrow">Merchandise</p>
+          <h2>Wear the message</h2>
+        </div>
+        {data.merch.length === 0 ? (
+          <div className="coming-soon-panel">
+            <h3>Merch coming soon</h3>
+            <p>Clothing and merchandise will appear here when it is ready.</p>
+          </div>
+        ) : (
+          <div className="merch-grid">
+            {data.merch.map((item) => (
+              <MerchCard data={data} item={item} key={item.id} />
+            ))}
+          </div>
+        )}
       </section>
 
       <section id="story" className="story-section">
@@ -531,9 +632,11 @@ function AdminPage({
   const [release, setRelease] = useState(emptyRelease);
   const [event, setEvent] = useState(emptyEvent);
   const [post, setPost] = useState(emptyPost);
+  const [merch, setMerch] = useState(emptyMerch);
   const [editingReleaseId, setEditingReleaseId] = useState<string | null>(null);
   const [editingEventId, setEditingEventId] = useState<string | null>(null);
   const [editingPostId, setEditingPostId] = useState<string | null>(null);
+  const [editingMerchId, setEditingMerchId] = useState<string | null>(null);
   const [error, setError] = useState("");
 
   const login = (event: FormEvent) => {
@@ -551,12 +654,12 @@ function AdminPage({
       <main className="admin-login">
         <form className="login-panel glass" onSubmit={login}>
           <button type="button" className="brand-button" onClick={() => onNavigate("/")}>
-            <span className="brand-mark">NiIM</span>
+            <span className="brand-mark">Martin</span>
             <span>{data.artistName}</span>
           </button>
           <div className="login-copy">
-            <h1>Private studio</h1>
-            <p>Only your friend can update releases, shows, messages, and story details.</p>
+            <h1 className="align-center">Private studio</h1>
+            <p>Only admin can update releases, shows, messages, and story details.</p>
           </div>
           <div className="login-fields">
             <label>
@@ -595,13 +698,13 @@ function AdminPage({
   return (
     <main className="admin-shell">
       <aside className="admin-sidebar glass">
-        <button className="brand-button" onClick={() => onNavigate("/")}>
-          <span className="brand-mark">NiIM</span>
-          <span>Public site</span>
-        </button>
+        <div className="brand-button admin-locked-brand">
+          <span className="brand-mark">Martin</span>
+          <span>Studio locked</span>
+        </div>
         <div>
           <h1>Studio</h1>
-          <p>Update what fans see.</p>
+          <p>Update what fans see. Sign out before returning to the public site.</p>
         </div>
         <button className="secondary-button" onClick={onLogout}>
           <LogOut size={17} />
@@ -721,6 +824,16 @@ function AdminPage({
                 <input required type="date" value={release.date} onChange={(e) => setRelease({ ...release, date: e.target.value })} />
               </label>
               <label>
+                Release status
+                <select
+                  value={release.status}
+                  onChange={(e) => setRelease({ ...release, status: e.target.value as Release["status"] })}
+                >
+                  <option value="upcoming">Upcoming song</option>
+                  <option value="released">Released song</option>
+                </select>
+              </label>
+              <label>
                 Platform
                 <input value={release.platform} onChange={(e) => setRelease({ ...release, platform: e.target.value })} />
               </label>
@@ -729,6 +842,13 @@ function AdminPage({
                 <input value={release.link} onChange={(e) => setRelease({ ...release, link: e.target.value })} />
               </label>
             </div>
+            <label>
+              Inspiration and journey
+              <textarea
+                value={release.description}
+                onChange={(e) => setRelease({ ...release, description: e.target.value })}
+              />
+            </label>
             <ImagePicker label="Cover image" value={release.cover} onChange={(cover) => setRelease({ ...release, cover })} />
             <button className="primary-button" type="submit">
               {editingReleaseId ? <Pencil size={18} /> : <Plus size={18} />}
@@ -757,6 +877,8 @@ function AdminPage({
                 platform: item.platform,
                 link: item.link,
                 cover: item.cover,
+                description: item.description,
+                status: item.status,
               });
             }}
             onDelete={(id) => onUpdate({ ...data, releases: data.releases.filter((item) => item.id !== id) })}
@@ -805,6 +927,16 @@ function AdminPage({
               <label>
                 Ticket price
                 <input value={event.ticketPrice} onChange={(e) => setEvent({ ...event, ticketPrice: e.target.value })} />
+              </label>
+              <label>
+                Ticket currency
+                <select value={event.ticketCurrency} onChange={(e) => setEvent({ ...event, ticketCurrency: e.target.value })}>
+                  {currencies.map((currency) => (
+                    <option value={currency.value} key={currency.value}>
+                      {currency.label}
+                    </option>
+                  ))}
+                </select>
               </label>
               <label>
                 Ticket link
@@ -857,12 +989,98 @@ function AdminPage({
                 date: item.date,
                 time: item.time,
                 ticketPrice: item.ticketPrice,
+                ticketCurrency: item.ticketCurrency,
                 ticketLink: item.ticketLink,
                 ticketTotal: item.ticketTotal,
                 ticketsLeft: item.ticketsLeft,
               });
             }}
             onDelete={(id) => onUpdate({ ...data, events: data.events.filter((item) => item.id !== id) })}
+          />
+        </Panel>
+
+        <Panel title={editingMerchId ? "Edit merch" : "Add merch"}>
+          <form
+            className="stack"
+            onSubmit={(e) => {
+              e.preventDefault();
+              const normalizedMerch = {
+                ...merch,
+                stock: Number(merch.stock) || 0,
+              };
+              const nextMerch = editingMerchId
+                ? data.merch.map((item) => (item.id === editingMerchId ? { ...normalizedMerch, id: editingMerchId } : item))
+                : [{ ...normalizedMerch, id: crypto.randomUUID() }, ...data.merch];
+              onUpdate({ ...data, merch: nextMerch });
+              setMerch(emptyMerch);
+              setEditingMerchId(null);
+            }}
+          >
+            <div className="form-grid">
+              <label>
+                Merch name
+                <input required value={merch.title} onChange={(e) => setMerch({ ...merch, title: e.target.value })} />
+              </label>
+              <label>
+                Price
+                <input required value={merch.price} onChange={(e) => setMerch({ ...merch, price: e.target.value })} />
+              </label>
+              <label>
+                Currency
+                <select value={merch.currency} onChange={(e) => setMerch({ ...merch, currency: e.target.value })}>
+                  {currencies.map((currency) => (
+                    <option value={currency.value} key={currency.value}>
+                      {currency.label}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label>
+                Total amount / stock
+                <input
+                  min="0"
+                  type="number"
+                  value={merch.stock}
+                  onChange={(e) => setMerch({ ...merch, stock: Number(e.target.value) })}
+                />
+              </label>
+            </div>
+            <label>
+              Details
+              <textarea value={merch.description} onChange={(e) => setMerch({ ...merch, description: e.target.value })} />
+            </label>
+            <ImagePicker label="Merch image" value={merch.image} onChange={(image) => setMerch({ ...merch, image })} />
+            <button className="primary-button" type="submit">
+              {editingMerchId ? <Pencil size={18} /> : <Plus size={18} />}
+              {editingMerchId ? "Save merch" : "Add merch"}
+            </button>
+            {editingMerchId && (
+              <button
+                className="ghost-button"
+                type="button"
+                onClick={() => {
+                  setEditingMerchId(null);
+                  setMerch(emptyMerch);
+                }}
+              >
+                Cancel edit
+              </button>
+            )}
+          </form>
+          <EditableList
+            items={data.merch}
+            onEdit={(item) => {
+              setEditingMerchId(item.id);
+              setMerch({
+                title: item.title,
+                description: item.description,
+                price: item.price,
+                currency: item.currency,
+                stock: item.stock,
+                image: item.image,
+              });
+            }}
+            onDelete={(id) => onUpdate({ ...data, merch: data.merch.filter((item) => item.id !== id) })}
           />
         </Panel>
 
@@ -924,7 +1142,111 @@ function AdminPage({
           />
         </Panel>
       </section>
+
+      <ScriptureCarousel />
     </main>
+  );
+}
+
+function useMidnightHold() {
+  const [isMidnight, setIsMidnight] = useState(() => isPublicRestWindow());
+
+  useEffect(() => {
+    const update = () => setIsMidnight(isPublicRestWindow());
+    const timer = window.setInterval(update, 30000);
+    update();
+    return () => window.clearInterval(timer);
+  }, []);
+
+  return isMidnight;
+}
+
+function isPublicRestWindow() {
+  const hour = new Date().getHours();
+  return hour >= 0 && hour < 5;
+}
+
+function MidnightHold({ data, onNavigate }: { data: SiteData; onNavigate: (path: string) => void }) {
+  return (
+    <main className={`midnight-hold ${data.backgroundTheme}`}>
+      <button className="brand-button midnight-brand" onClick={() => onNavigate(ADMIN_PATH)}>
+        <span className="brand-mark">Martin</span>
+        <span>{data.artistName}</span>
+      </button>
+      <section className="midnight-panel glass">
+        <div className="sleepy-orb" aria-hidden="true">
+          <span className="sleepy-eye left" />
+          <span className="sleepy-eye right" />
+          <span className="sleepy-mouth" />
+          <span className="sleepy-z z-one">z</span>
+          <span className="sleepy-z z-two">z</span>
+          <span className="sleepy-z z-three">z</span>
+        </div>
+        <p className="eyebrow">Rest mode</p>
+        <h1>We are taking a midnight pause</h1>
+        <p>
+          The site is resting for a little while. Please check back after 5:00 AM for music, events, merch, and updates.
+        </p>
+      </section>
+    </main>
+  );
+}
+
+const scriptures = [
+  {
+    reference: "Philippians 4:13",
+    text: "I can do all things through Christ which strengtheneth me.",
+  },
+  {
+    reference: "Isaiah 41:10",
+    text: "Fear thou not; for I am with thee: be not dismayed; for I am thy God.",
+  },
+  {
+    reference: "Psalm 46:1",
+    text: "God is our refuge and strength, a very present help in trouble.",
+  },
+  {
+    reference: "Jeremiah 29:11",
+    text: "For I know the thoughts that I think toward you, saith the Lord.",
+  },
+  {
+    reference: "Romans 8:28",
+    text: "All things work together for good to them that love God.",
+  },
+  {
+    reference: "Psalm 23:1",
+    text: "The Lord is my shepherd; I shall not want.",
+  },
+  {
+    reference: "2 Timothy 1:7",
+    text: "God hath not given us the spirit of fear; but of power, and of love.",
+  },
+  {
+    reference: "Matthew 19:26",
+    text: "With God all things are possible.",
+  },
+];
+
+function ScriptureCarousel() {
+  const loop = [...scriptures, ...scriptures];
+
+  return (
+    <aside className="scripture-rail" aria-label="Bible scripture encouragement">
+      <div className="scripture-rail-header">
+        <span>Daily strength</span>
+        <strong>Scripture</strong>
+      </div>
+      <div className="scripture-carousel">
+        <div className="scripture-track">
+          {loop.map((scripture, index) => (
+            <article className="scripture-card" key={`${scripture.reference}-${index}`}>
+              <p>{scripture.text}</p>
+              <span>{scripture.reference}</span>
+            </article>
+          ))}
+        </div>
+      </div>
+    </aside>
   );
 }
 
@@ -969,9 +1291,11 @@ function TicketMeter({ event }: { event: EventItem }) {
   const total = Math.max(event.ticketTotal || 0, event.ticketsLeft || 0);
   const left = Math.max(0, event.ticketsLeft || 0);
   const soldPercent = total > 0 ? Math.min(100, Math.round(((total - left) / total) * 100)) : 0;
+  const isSoldOut = total > 0 && left === 0;
 
   return (
-    <div className="ticket-meter" aria-label={`${left} tickets left for ${event.title}`}>
+    <div className={`ticket-meter ${isSoldOut ? "sold-out" : ""}`} aria-label={`${left} tickets left for ${event.title}`}>
+      {isSoldOut && <span className="sold-out-ribbon">Sold out</span>}
       <div className="ticket-stack" aria-hidden="true">
         <Ticket size={27} />
         <Ticket size={27} />
@@ -989,17 +1313,89 @@ function TicketMeter({ event }: { event: EventItem }) {
   );
 }
 
+function MerchCard({ data, item }: { data: SiteData; item: MerchItem }) {
+  const [quantity, setQuantity] = useState(1);
+  const isSoldOut = item.stock <= 0;
+  const orderLink = buildWhatsAppMerchLink(data, item, quantity);
+
+  return (
+    <article className={`merch-card ${isSoldOut ? "sold-out-card" : ""}`}>
+      <div className="merch-image">
+        {item.image ? <img src={item.image} alt={item.title} /> : <span>Martin</span>}
+      </div>
+      <div className="merch-copy">
+        <div>
+          <span>{item.stock > 0 ? `${item.stock} available` : "Sold out"}</span>
+          <h3>{item.title}</h3>
+          <p>{item.description || "Details coming soon."}</p>
+        </div>
+        <strong>{formatMoney(item.currency, item.price)}</strong>
+        <label className="quantity-control">
+          Quantity
+          <input
+            min="1"
+            max={Math.max(1, item.stock)}
+            type="number"
+            value={quantity}
+            disabled={isSoldOut}
+            onChange={(e) => setQuantity(Math.min(Math.max(1, Number(e.target.value) || 1), Math.max(1, item.stock)))}
+          />
+        </label>
+        {orderLink && !isSoldOut ? (
+          <a className="buy-ticket-button" href={orderLink} target="_blank" rel="noreferrer">
+            Order
+          </a>
+        ) : (
+          <span className="buy-ticket-button disabled">{isSoldOut ? "Sold out" : "WhatsApp number needed"}</span>
+        )}
+      </div>
+    </article>
+  );
+}
+
+function FeaturedRelease({ release }: { release: Release }) {
+  return (
+    <article className="featured-release">
+      <div className="featured-release-thumb">
+        {release.cover ? <img src={release.cover} alt={`${release.title} thumbnail`} /> : <Music2 size={58} />}
+      </div>
+      <div className="featured-release-copy">
+        <p className="eyebrow">Upcoming work</p>
+        <h3>{release.title}</h3>
+        <span className="release-date-badge">Release date: {formatDate(release.date)}</span>
+        <p>
+          {release.description ||
+            "A closer look at the inspiration, healing, and journey behind the next song will appear here."}
+        </p>
+        <p>
+          {release.platform || "Streaming details coming soon"} · {formatDate(release.date)}
+        </p>
+        {release.link ? (
+          <a className="primary-button" href={release.link} target="_blank" rel="noreferrer">
+            Listen now
+          </a>
+        ) : (
+          <span className="secondary-button disabled">Listen link coming soon</span>
+        )}
+      </div>
+    </article>
+  );
+}
+
 function TicketActions({ data, event }: { data: SiteData; event: EventItem }) {
   const whatsappLink = buildWhatsAppTicketLink(data, event);
+  const isSoldOut = event.ticketTotal > 0 && event.ticketsLeft <= 0;
 
   return (
     <div className="ticket-actions">
-      {event.ticketLink && (
+      {event.ticketLink && !isSoldOut && (
         <a href={event.ticketLink} target="_blank" rel="noreferrer">
           Tickets
         </a>
       )}
-      {whatsappLink ? (
+      {isSoldOut ? (
+        <span className="buy-ticket-button disabled">Sold out</span>
+      ) : whatsappLink ? (
         <a className="buy-ticket-button" href={whatsappLink} target="_blank" rel="noreferrer">
           Buy ticket
         </a>
@@ -1063,9 +1459,13 @@ function ThemeStrip({ theme }: { theme: BackgroundTheme }) {
 
   return (
     <aside className="theme-strip" aria-label={`Current theme: ${label}`}>
-      <div>
-        {repeated.map((item, index) => (
-          <span key={`${item}-${index}`}>{item}</span>
+      <div className="theme-strip-track">
+        {[0, 1].map((group) => (
+          <div className="theme-strip-group" aria-hidden={group === 1} key={group}>
+            {repeated.map((item, index) => (
+              <span key={`${group}-${item}-${index}`}>{item}</span>
+            ))}
+          </div>
         ))}
       </div>
     </aside>
@@ -1153,12 +1553,25 @@ function loadData(): SiteData {
       backgroundTheme: parsed.backgroundTheme ?? seedData.backgroundTheme,
       whatsappNumber: parsed.whatsappNumber ?? seedData.whatsappNumber,
       whatsappTicketMessage: parsed.whatsappTicketMessage ?? seedData.whatsappTicketMessage,
+      merch: (parsed.merch ?? seedData.merch).map((item) => ({
+        ...item,
+        currency: item.currency ?? "R",
+      })),
       socials: {
         ...seedData.socials,
         ...(parsed.socials ?? {}),
       },
+      releases: parsed.releases.map((release) => ({
+        ...release,
+        description: release.description ?? seedData.releases.find((seedRelease) => seedRelease.id === release.id)?.description ?? "",
+        status:
+          release.status ??
+          seedData.releases.find((seedRelease) => seedRelease.id === release.id)?.status ??
+          (new Date(`${release.date}T00:00:00`) > new Date() ? "upcoming" : "released"),
+      })),
       events: parsed.events.map((event) => ({
         ...event,
+        ticketCurrency: event.ticketCurrency ?? "R",
         ticketTotal: event.ticketTotal ?? seedData.events.find((seedEvent) => seedEvent.id === event.id)?.ticketTotal ?? 0,
         ticketsLeft: event.ticketsLeft ?? seedData.events.find((seedEvent) => seedEvent.id === event.id)?.ticketsLeft ?? 0,
       })),
@@ -1213,11 +1626,35 @@ function buildWhatsAppTicketLink(data: SiteData, event: EventItem) {
   const message = [
     data.whatsappTicketMessage || "Hi, I would like to buy tickets for",
     `${event.title}.`,
-    event.ticketPrice ? `Ticket price: ${event.ticketPrice}.` : "",
+    event.ticketPrice ? `Ticket price: ${formatMoney(event.ticketCurrency, event.ticketPrice)}.` : "",
     event.date ? `Date: ${formatDate(event.date)}.` : "",
   ]
     .filter(Boolean)
     .join(" ");
 
   return `https://wa.me/${number}?text=${encodeURIComponent(message)}`;
+}
+
+function buildWhatsAppMerchLink(data: SiteData, item: MerchItem, quantity: number) {
+  const number = data.whatsappNumber.replace(/\D/g, "");
+  if (!number) return "";
+
+  const message = [
+    "Hi, I would like to order merch.",
+    `Item: ${item.title}.`,
+    `Quantity: ${quantity}.`,
+    item.price ? `Price: ${formatMoney(item.currency, item.price)}.` : "",
+  ]
+    .filter(Boolean)
+    .join(" ");
+
+  return `https://wa.me/${number}?text=${encodeURIComponent(message)}`;
+}
+
+function formatMoney(currency: string, value: string) {
+  const trimmed = value.trim();
+  if (!trimmed) return "";
+
+  const cleaned = trimmed.replace(/^(R|N\$|\$|€|£|P)\s*/i, "");
+  return `${currency}${cleaned}`;
 }
